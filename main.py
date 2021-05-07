@@ -55,13 +55,27 @@ async def download_zip_to_xlsx(date: str) -> str:
             return None
 
 
-# 异步求余查询
+# 解析 xlsx
 async def xlsx_to_json(file_name: str):
-    names = ['Unnamed: 0', 'Unnamed: 1', '番名', '星期', '时间',
-             'bilibili', 'AcFun', '优酷', '爱奇艺', '腾讯',
-             '独播', '首播', '集数', '特殊', '标签',
-             'Unnamed: 15', 'Unnamed: 16']
-    sheet = pd.read_excel(FILE_PATH + file_name, names=names, skiprows=2, skipfooter=10, keep_default_na=False)
+    names_footer = ['独播', '首播', '集数', '特殊', '标签',
+                    'Unnamed: -2', 'Unnamed: -1']
+    sheet = pd.read_excel(FILE_PATH + file_name, skiprows=2, skipfooter=10, keep_default_na=False)
+    if len(sheet.columns.to_list()) == 15:
+        web_site = ['网站1', '网站2', '网站3', '网站4']
+    else:
+        web_site = ['网站1', '网站2', '网站3', '网站4', '网站5']
+
+    names_new = ['Unnamed: 0', 'Unnamed: 1',
+                 '番名', '星期', '时间'] + web_site + names_footer
+    names_old = ['Unnamed: 0', 'Unnamed: 1',
+                 '番名', '星期时间'] + web_site + names_footer
+    is_old = False
+    try:
+        sheet = pd.read_excel(FILE_PATH + file_name, names=names_new, skiprows=2, skipfooter=10, keep_default_na=False)
+    except Exception as e:
+        log_error(f'新格式解析错误，使用旧格式。 {e}')
+        is_old = True
+        sheet = pd.read_excel(FILE_PATH + file_name, names=names_old, skiprows=2, skipfooter=10, keep_default_na=False)
     ret_dic = [
         {'weekday': '星期一', 'items': []},
         {'weekday': '星期二', 'items': []},
@@ -72,10 +86,19 @@ async def xlsx_to_json(file_name: str):
         {'weekday': '星期天', 'items': []},
         {'weekday': '其他', 'items': []}]
     for i in sheet.index.values:
-        copyright = sheet.loc[i, ['bilibili', 'AcFun', '优酷', '爱奇艺', '腾讯',
-                                  '独播']].to_dict()
-        tmp = sheet.loc[i, ['番名', '星期', '时间',
-                            '首播', '集数', '特殊', '标签']].to_dict()
+        copyright = {
+            '网站': list(filter(None, sheet.loc[i, web_site].to_list())),
+            '独播': sheet.loc[i, ['独播']].values[0]
+        }
+        if is_old:
+            tmp = sheet.loc[i, ['番名', '星期时间',
+                                '首播', '集数', '特殊', '标签']].to_dict()
+            tmp.update({'星期': tmp['星期时间'][:2]})
+            tmp.update({'时间': tmp['星期时间'][2:]})
+            tmp.pop('星期时间')
+        else:
+            tmp = sheet.loc[i, ['番名', '星期', '时间',
+                                '首播', '集数', '特殊', '标签']].to_dict()
         tmp.update({'版权': copyright})
         if tmp['番名'] == '新番表 by Hazx.':
             continue
@@ -111,7 +134,7 @@ async def get_xlsx(date: str):
 
 async def get_data_json(date: str) -> list:
     global bangumi_data_json
-    if tmp:=bangumi_data_json.get(date):
+    if tmp := bangumi_data_json.get(date):
         if time.time() - tmp['last_cache_time'] >= cache_time:
             # 缓存过期
             log_info('缓存过期，或不存在数据')
@@ -123,9 +146,9 @@ async def get_data_json(date: str) -> list:
             return tmp['data']
     else:
         bangumi_data_json.update({
-            date:{
-                'data':await get_xlsx(date),
-                'last_cache_time':time.time()
+            date: {
+                'data': await get_xlsx(date),
+                'last_cache_time': time.time()
             }
         })
 
@@ -135,12 +158,9 @@ async def get_data_json(date: str) -> list:
 # 获取每周番剧
 @app.get("/api/calendar/{year}/{month}")
 async def get_date_json(year: str, month: str):
-    if len(year) != 4 or len(month) != 2:
+    if len(year) != 4 or len(month) != 2 or month not in ['01','04','07','10']:
         return Response.resp_400(data=None, message='参数错误！')
-    try:
-        return Response.resp_200(data=await get_data_json(year + month))
-    except Exception as e:
-        return Response.resp_400(data=None, message=str(e))
+    return Response.resp_200(data=await get_data_json(year + month))
 
 
 if __name__ == "__main__":

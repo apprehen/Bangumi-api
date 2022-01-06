@@ -2,7 +2,7 @@
 
 **数据均来自于 https://hmacg.cn/bangumi ，此接口仅对其进行了处理**
 
-Demo：https://bangumi.lolijk.cn/docs
+Demo：
 
 ## API
 
